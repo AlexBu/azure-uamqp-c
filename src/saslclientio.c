@@ -920,13 +920,13 @@ CONCRETE_IO_HANDLE saslclientio_create(void* io_create_parameters)
     SASLCLIENTIO_CONFIG* sasl_client_io_config = (SASLCLIENTIO_CONFIG*)io_create_parameters;
     SASL_CLIENT_IO_INSTANCE* result;
 
-    /* Codes_SRS_SASLCLIENTIO_01_005: [If xio_create_parameters is NULL, saslclientio_create shall fail and return NULL.] */
+    /* Codes_SRS_SASLCLIENTIO_01_005: [If `io_create_parameters` is NULL, `saslclientio_create` shall fail and return NULL.] */
     if (sasl_client_io_config == NULL)
     {
         LogError("NULL io_create_parameters");
         result = NULL;
     }
-    /* Codes_SRS_SASLCLIENTIO_01_092: [If any of the sasl_mechanism or underlying_io members of the configuration structure are NULL, saslclientio_create shall fail and return NULL.] */
+    /* Codes_SRS_SASLCLIENTIO_01_092: [If any of the `sasl_mechanism` or `underlying_io` members of the configuration structure are NULL, `saslclientio_create` shall fail and return NULL.] */
     else if ((sasl_client_io_config->underlying_io == NULL) ||
         (sasl_client_io_config->sasl_mechanism == NULL))
     {
@@ -937,29 +937,30 @@ CONCRETE_IO_HANDLE saslclientio_create(void* io_create_parameters)
     else
     {
         result = (SASL_CLIENT_IO_INSTANCE*)malloc(sizeof(SASL_CLIENT_IO_INSTANCE));
-        /* Codes_SRS_SASLCLIENTIO_01_006: [If memory cannot be allocated for the new instance, saslclientio_create shall fail and return NULL.] */
         if (result == NULL)
         {
+            /* Codes_SRS_SASLCLIENTIO_01_006: [If memory cannot be allocated for the new instance, `saslclientio_create` shall fail and return NULL.] */
             LogError("Cannot allocate sasl client IO instance");
         }
         else
         {
             result->underlying_io = sasl_client_io_config->underlying_io;
-            /* Codes_SRS_SASLCLIENTIO_01_089: [saslclientio_create shall create a frame_codec to be used for encoding/decoding frames bycalling frame_codec_create and passing the underlying_io as argument.] */
+            /* Codes_SRS_SASLCLIENTIO_01_089: [`saslclientio_create` shall create a frame codec to be used for encoding/decoding frames by calling `frame_codec_create` and passing `on_frame_codec_error` and a context as arguments.] */
             result->frame_codec = frame_codec_create(on_frame_codec_error, result);
             if (result->frame_codec == NULL)
             {
-                /* Codes_SRS_SASLCLIENTIO_01_090: [If frame_codec_create fails, then saslclientio_create shall fail and return NULL.] */
+                /* Codes_SRS_SASLCLIENTIO_01_090: [If `frame_codec_create` fails, then `saslclientio_create` shall fail and return NULL.] */
                 LogError("frame_codec_create failed");
                 free(result);
                 result = NULL;
             }
             else
             {
-                /* Codes_SRS_SASLCLIENTIO_01_084: [saslclientio_create shall create a sasl_frame_codec to be used for SASL frame encoding/decoding by calling sasl_frame_codec_create and passing the just created frame_codec as argument.] */
+                /* Codes_SRS_SASLCLIENTIO_01_084: [`saslclientio_create` shall create a SASL frame codec to be used for SASL frame encoding/decoding by calling `sasl_frame_codec_create` and passing the just created frame codec as argument.] */
                 result->sasl_frame_codec = sasl_frame_codec_create(result->frame_codec, sasl_frame_received_callback, on_sasl_frame_codec_error, result);
                 if (result->sasl_frame_codec == NULL)
                 {
+                    /* Codes_SRS_SASLCLIENTIO_01_085: [If `sasl_frame_codec_create` fails, then `saslclientio_create` shall fail and return NULL.] */
                     LogError("sasl_frame_codec_create failed");
                     frame_codec_destroy(result->frame_codec);
                     free(result);
@@ -967,7 +968,7 @@ CONCRETE_IO_HANDLE saslclientio_create(void* io_create_parameters)
                 }
                 else
                 {
-                    /* Codes_SRS_SASLCLIENTIO_01_004: [saslclientio_create shall return on success a non-NULL handle to a new SASL client IO instance.] */
+                    /* Codes_SRS_SASLCLIENTIO_01_004: [`saslclientio_create` shall return on success a non-NULL handle to a new SASL client IO instance.] */
                     result->on_bytes_received = NULL;
                     result->on_io_open_complete = NULL;
                     result->on_io_error = NULL;
@@ -991,33 +992,35 @@ void saslclientio_destroy(CONCRETE_IO_HANDLE sasl_client_io)
 {
     if (sasl_client_io == NULL)
     {
-        /* Codes_SRS_SASLCLIENTIO_01_008: [If the argument sasl_client_io is NULL, saslclientio_destroy shall do nothing.]*/
+        /* Codes_SRS_SASLCLIENTIO_01_008: [If the argument `sasl_client_io` is NULL, `saslclientio_destroy` shall do nothing.] */
         LogError("NULL sasl_client_io");
     }
     else
     {
         SASL_CLIENT_IO_INSTANCE* sasl_client_io_instance = (SASL_CLIENT_IO_INSTANCE*)sasl_client_io;
 
-        /* Codes_SRS_SASLCLIENTIO_01_007: [saslclientio_destroy shall free all resources associated with the SASL client IO handle.] */
-        /* Codes_SRS_SASLCLIENTIO_01_086: [saslclientio_destroy shall destroy the sasl_frame_codec created in saslclientio_create by calling sasl_frame_codec_destroy.] */
+        /* Codes_SRS_SASLCLIENTIO_01_007: [`saslclientio_destroy` shall free all resources associated with the SASL client IO handle.] */
+        /* Codes_SRS_SASLCLIENTIO_01_086: [`saslclientio_destroy` shall destroy the SASL frame codec created in `saslclientio_create` by calling `sasl_frame_codec_destroy`.] */
         sasl_frame_codec_destroy(sasl_client_io_instance->sasl_frame_codec);
 
-        /* Codes_SRS_SASLCLIENTIO_01_091: [saslclientio_destroy shall destroy the frame_codec created in saslclientio_create by calling frame_codec_destroy.] */
+        /* Codes_SRS_SASLCLIENTIO_01_091: [`saslclientio_destroy` shall destroy the frame codec created in `saslclientio_create` by calling `frame_codec_destroy`.] */
         frame_codec_destroy(sasl_client_io_instance->frame_codec);
         free(sasl_client_io);
     }
 }
 
-int saslclientio_open(CONCRETE_IO_HANDLE sasl_client_io, ON_IO_OPEN_COMPLETE on_io_open_complete, void* on_io_open_complete_context, ON_BYTES_RECEIVED on_bytes_received, void* on_bytes_received_context, ON_IO_ERROR on_io_error, void* on_io_error_context)
+int saslclientio_open_async(CONCRETE_IO_HANDLE sasl_client_io, ON_IO_OPEN_COMPLETE on_io_open_complete, void* on_io_open_complete_context, ON_BYTES_RECEIVED on_bytes_received, void* on_bytes_received_context, ON_IO_ERROR on_io_error, void* on_io_error_context)
 {
     int result = 0;
 
-    /* Codes_SRS_SASLCLIENTIO_01_011: [If any of the sasl_client_io or on_bytes_received arguments is NULL, saslclientio_open shall fail and return a non-zero value.] */
     if ((sasl_client_io == NULL) ||
-        (on_bytes_received == NULL))
+        (on_io_open_complete == NULL) ||
+        (on_bytes_received == NULL) ||
+        (on_io_error == NULL))
     {
-        LogError("Bad arguments: sasl_client_io = %p, on_bytes_received = %p",
-            sasl_client_io, on_bytes_received);
+        /* Codes_SRS_SASLCLIENTIO_01_011: [If any of the `sasl_client_io`, `on_io_open_complete`, `on_bytes_received` or `on_io_error` arguments is NULL, `saslclientio_open` shall fail and return a non-zero value.] */
+        LogError("Bad arguments: sasl_client_io = %p, on_io_open_complete = %p, on_bytes_received = %p, on_io_error = %p",
+            sasl_client_io, on_io_open_complete, on_bytes_received, on_io_error);
         result = __FAILURE__;
     }
     else
@@ -1043,17 +1046,17 @@ int saslclientio_open(CONCRETE_IO_HANDLE sasl_client_io, ON_IO_OPEN_COMPLETE on_
             sasl_client_io_instance->io_state = IO_STATE_OPENING_UNDERLYING_IO;
             sasl_client_io_instance->is_trace_on = 0;
 
-            /* Codes_SRS_SASLCLIENTIO_01_009: [saslclientio_open shall call xio_open on the underlying_io passed to saslclientio_create.] */
-            /* Codes_SRS_SASLCLIENTIO_01_013: [saslclientio_open shall pass to xio_open a callback for receiving bytes and a state changed callback for the underlying_io state changes.] */
+            /* Codes_SRS_SASLCLIENTIO_01_009: [`saslclientio_open` shall call `xio_open` on the `underlying_io` passed to `saslclientio_create`.] */
+            /* Codes_SRS_SASLCLIENTIO_01_013: [`saslclientio_open_async` shall pass to `xio_open` the `on_underlying_io_open_complete` as `on_io_open_complete` argument, `on_underlying_bytes_received` as `on_bytes_received` argument and `on_underlying_io_error` as `on_io_error` argument.] */
             if (xio_open(sasl_client_io_instance->underlying_io, on_underlying_io_open_complete, sasl_client_io_instance, on_underlying_io_bytes_received, sasl_client_io_instance, on_underlying_io_error, sasl_client_io_instance) != 0)
             {
-                /* Codes_SRS_SASLCLIENTIO_01_012: [If the open of the underlying_io fails, saslclientio_open shall fail and return non-zero value.] */
+                /* Codes_SRS_SASLCLIENTIO_01_012: [If the open of the `underlying_io` fails, `saslclientio_open_async` shall fail and return non-zero value.] */
                 LogError("xio_open failed");
                 result = __FAILURE__;
             }
             else
             {
-                /* Codes_SRS_SASLCLIENTIO_01_010: [On success, saslclientio_open shall return 0.] */
+                /* Codes_SRS_SASLCLIENTIO_01_010: [On success, `saslclientio_open_async` shall return 0.]*/
                 result = 0;
             }
         }
@@ -1062,11 +1065,11 @@ int saslclientio_open(CONCRETE_IO_HANDLE sasl_client_io, ON_IO_OPEN_COMPLETE on_
     return result;
 }
 
-int saslclientio_close(CONCRETE_IO_HANDLE sasl_client_io, ON_IO_CLOSE_COMPLETE on_io_close_complete, void* on_io_close_complete_context)
+int saslclientio_close_async(CONCRETE_IO_HANDLE sasl_client_io, ON_IO_CLOSE_COMPLETE on_io_close_complete, void* on_io_close_complete_context)
 {
     int result = 0;
 
-    /* Codes_SRS_SASLCLIENTIO_01_017: [If sasl_client_io is NULL, saslclientio_close shall fail and return a non-zero value.] */
+    /* Codes_SRS_SASLCLIENTIO_01_017: [If `sasl_client_io` is NULL, `saslclientio_close_async` shall fail and return a non-zero value.] */
     if (sasl_client_io == NULL)
     {
         LogError("NULL saslclientio_close");
@@ -1076,10 +1079,11 @@ int saslclientio_close(CONCRETE_IO_HANDLE sasl_client_io, ON_IO_CLOSE_COMPLETE o
     {
         SASL_CLIENT_IO_INSTANCE* sasl_client_io_instance = (SASL_CLIENT_IO_INSTANCE*)sasl_client_io;
 
-        /* Codes_SRS_SASLCLIENTIO_01_098: [saslclientio_close shall only perform the close if the state is OPEN, OPENING or ERROR.] */
+        /* Codes_SRS_SASLCLIENTIO_01_098: [`saslclientio_close_async` shall only perform the close if the state is OPEN, OPENING or ERROR.] */
         if ((sasl_client_io_instance->io_state == IO_STATE_NOT_OPEN) ||
             (sasl_client_io_instance->io_state == IO_STATE_CLOSING))
         {
+            /* Codes_SRS_SASLCLIENTIO_01_097: [If `saslclientio_close_async` is called when the IO is in the `IO_STATE_NOT_OPEN` state, `saslclientio_close_async` shall fail and return a non zero value.] */
             LogError("saslclientio_close called while not open");
             result = __FAILURE__;
         }
@@ -1090,16 +1094,16 @@ int saslclientio_close(CONCRETE_IO_HANDLE sasl_client_io, ON_IO_CLOSE_COMPLETE o
             sasl_client_io_instance->on_io_close_complete = on_io_close_complete;
             sasl_client_io_instance->on_io_close_complete_context = on_io_close_complete_context;
 
-            /* Codes_SRS_SASLCLIENTIO_01_015: [saslclientio_close shall close the underlying io handle passed in saslclientio_create by calling xio_close.] */
+            /* Codes_SRS_SASLCLIENTIO_01_015: [`saslclientio_close_async` shall close the underlying io handle passed in `saslclientio_create` by calling `xio_close`.] */
             if (xio_close(sasl_client_io_instance->underlying_io, on_underlying_io_close_complete, sasl_client_io_instance) != 0)
             {
-                /* Codes_SRS_SASLCLIENTIO_01_018: [If xio_close fails, then saslclientio_close shall return a non-zero value.] */
+                /* Codes_SRS_SASLCLIENTIO_01_018: [If `xio_close` fails, then `saslclientio_close_async` shall return a non-zero value.] */
                 LogError("xio_close failed");
                 result = __FAILURE__;
             }
             else
             {
-                /* Codes_SRS_SASLCLIENTIO_01_016: [On success, saslclientio_close shall return 0.] */
+                /* Codes_SRS_SASLCLIENTIO_01_016: [On success, `saslclientio_close_async` shall return 0.] */
                 result = 0;
             }
         }
@@ -1108,7 +1112,7 @@ int saslclientio_close(CONCRETE_IO_HANDLE sasl_client_io, ON_IO_CLOSE_COMPLETE o
     return result;
 }
 
-int saslclientio_send(CONCRETE_IO_HANDLE sasl_client_io, const void* buffer, size_t size, ON_SEND_COMPLETE on_send_complete, void* callback_context)
+int saslclientio_send_async(CONCRETE_IO_HANDLE sasl_client_io, const void* buffer, size_t size, ON_SEND_COMPLETE on_send_complete, void* callback_context)
 {
     int result;
 
@@ -1244,9 +1248,9 @@ static const IO_INTERFACE_DESCRIPTION sasl_client_io_interface_description =
     saslclientio_retrieveoptions,
     saslclientio_create,
     saslclientio_destroy,
-    saslclientio_open,
-    saslclientio_close,
-    saslclientio_send,
+    saslclientio_open_async,
+    saslclientio_close_async,
+    saslclientio_send_async,
     saslclientio_dowork,
     saslclientio_setoption
 };
