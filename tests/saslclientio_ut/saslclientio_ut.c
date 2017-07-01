@@ -53,6 +53,8 @@ static AMQP_VALUE test_sasl_server_mechanism = (AMQP_VALUE)0x4247;
 static const char* test_mechanism = "test_mechanism";
 static void* test_context = (void*)0x4242;
 static SASL_OUTCOME_HANDLE test_sasl_outcome_handle = (SASL_OUTCOME_HANDLE)0x4243;
+static SASL_INIT_HANDLE test_sasl_init = (SASL_INIT_HANDLE)0x4244;
+static AMQP_VALUE test_sasl_init_value = (AMQP_VALUE)0x4245;
 
 static ON_IO_OPEN_COMPLETE saved_on_io_open_complete;
 static void* saved_on_io_open_complete_context;
@@ -331,12 +333,97 @@ static TEST_MUTEX_HANDLE g_testByTest;
 static TEST_MUTEX_HANDLE g_dllByDll;
 
 DEFINE_ENUM_STRINGS(UMOCK_C_ERROR_CODE, UMOCK_C_ERROR_CODE_VALUES)
+TEST_DEFINE_ENUM_TYPE(IO_OPEN_RESULT, IO_OPEN_RESULT_VALUES);
+IMPLEMENT_UMOCK_C_ENUM_TYPE(IO_OPEN_RESULT, IO_OPEN_RESULT_VALUES);
 
 static void on_umock_c_error(UMOCK_C_ERROR_CODE error_code)
 {
     char temp_str[256];
     (void)snprintf(temp_str, sizeof(temp_str), "umock_c reported error :%s", ENUM_TO_STRING(UMOCK_C_ERROR_CODE, error_code));
     ASSERT_FAIL(temp_str);
+}
+
+static int umocktypes_copy_amqp_binary(amqp_binary* destination, const amqp_binary* source)
+{
+    int result;
+
+    if (source->length > 0)
+    {
+        destination->bytes = (unsigned char*)malloc(source->length);
+        if (destination->bytes == NULL)
+        {
+            result = __FAILURE__;
+        }
+        else
+        {
+            result = 0;
+        }
+    }
+    else
+    {
+        result = 0;
+    }
+
+    if (result == 0)
+    {
+        destination->length = source->length;
+    }
+
+    return result;
+}
+
+static void umocktypes_free_amqp_binary(amqp_binary* value)
+{
+    if (value->bytes != NULL)
+    {
+        my_gballoc_free((void*)value->bytes);
+    }
+}
+
+static char* umocktypes_stringify_amqp_binary(const amqp_binary* value)
+{
+    char* result;
+
+    result = (char*)my_gballoc_malloc(3 + (5 * value->length));
+    if (result != NULL)
+    {
+        size_t pos = 0;
+        size_t i;
+
+        result[pos++] = '[';
+        for (i = 0; i < value->length; i++)
+        {
+            (void)sprintf(&result[pos], "0x%02X ", ((const unsigned char*)value->bytes)[i]);
+            pos += 5;
+        }
+        result[pos++] = ']';
+        result[pos++] = '\0';
+    }
+
+    return result;
+}
+
+static int umocktypes_are_equal_amqp_binary(amqp_binary* left, amqp_binary* right)
+{
+    int result;
+
+    if (left->length != right->length)
+    {
+        result = 0;
+    }
+    else
+    {
+        if (left->length == 0)
+        {
+            result = 1;
+        }
+        else
+        {
+            result = (memcmp(left->bytes, right->bytes, left->length) == 0) ? 1 : 0;
+        }
+    }
+
+    return result;
 }
 
 BEGIN_TEST_SUITE(saslclientio_ut)
@@ -378,6 +465,9 @@ TEST_SUITE_INITIALIZE(suite_init)
     REGISTER_GLOBAL_MOCK_RETURN(amqpvalue_get_array_item_count, 0);
     REGISTER_GLOBAL_MOCK_RETURN(amqpvalue_get_array_item, test_sasl_server_mechanism);
     REGISTER_GLOBAL_MOCK_RETURN(amqpvalue_get_symbol, 0);
+    REGISTER_GLOBAL_MOCK_RETURN(sasl_init_create, test_sasl_init);
+    REGISTER_GLOBAL_MOCK_RETURN(amqpvalue_create_sasl_init, test_sasl_init_value);
+    
     REGISTER_GLOBAL_MOCK_RETURN(OptionHandler_Create, NULL);
 
     REGISTER_TYPE(SASL_MECHANISM_BYTES*, SASL_MECHANISM_BYTES_ptr);
@@ -397,6 +487,13 @@ TEST_SUITE_INITIALIZE(suite_init)
     REGISTER_UMOCK_ALIAS_TYPE(AMQP_VALUE, void*);
     REGISTER_UMOCK_ALIAS_TYPE(SASL_MECHANISMS_HANDLE, void*);
     REGISTER_UMOCK_ALIAS_TYPE(SASL_MECHANISM_HANDLE, void*);
+    REGISTER_UMOCK_ALIAS_TYPE(SASL_OUTCOME_HANDLE, void*);
+    REGISTER_UMOCK_ALIAS_TYPE(SASL_INIT_HANDLE, void*);
+    REGISTER_UMOCK_ALIAS_TYPE(const AMQP_VALUE, void*);
+    REGISTER_UMOCK_ALIAS_TYPE(ON_BYTES_ENCODED, void*);
+
+    REGISTER_TYPE(IO_OPEN_RESULT, IO_OPEN_RESULT);
+    REGISTER_TYPE(amqp_binary, amqp_binary);
 }
 
 TEST_SUITE_CLEANUP(suite_cleanup)
@@ -785,22 +882,34 @@ TEST_FUNCTION(saslclientio_close_async_when_the_io_state_is_OPENING_closes_the_u
 static void setup_successful_sasl_handshake()
 {
     sasl_code sasl_outcome_code = sasl_code_ok;
-    size_t mechanism_count = 1;
+    uint32_t mechanism_count = 1;
+    SASL_MECHANISM_BYTES init_bytes;
+
+    init_bytes.length = 0;
+    init_bytes.bytes = NULL;
+
     saved_on_io_open_complete(saved_on_io_open_complete_context, IO_OPEN_OK);
     saved_on_bytes_received(saved_on_bytes_received_context, sasl_header, sizeof(sasl_header));
     saved_on_bytes_received(saved_on_bytes_received_context, test_sasl_mechanisms_frame, sizeof(test_sasl_mechanisms_frame));
+    umock_c_reset_all_calls();
+    STRICT_EXPECTED_CALL(amqpvalue_get_inplace_descriptor(test_sasl_value));
     STRICT_EXPECTED_CALL(is_sasl_mechanisms_type_by_descriptor(test_descriptor_value))
         .SetReturn(true);
-    STRICT_EXPECTED_CALL(amqpvalue_get_sasl_mechanisms(IGNORED_PTR_ARG, IGNORED_PTR_ARG));
+    STRICT_EXPECTED_CALL(amqpvalue_get_sasl_mechanisms(test_sasl_value, IGNORED_PTR_ARG));
     STRICT_EXPECTED_CALL(sasl_mechanisms_get_sasl_server_mechanisms(IGNORED_PTR_ARG, IGNORED_PTR_ARG));
     STRICT_EXPECTED_CALL(amqpvalue_get_array_item_count(IGNORED_PTR_ARG, IGNORED_PTR_ARG))
-        .CopyOutArgumentBuffer_value(&mechanism_count, sizeof(mechanism_count));
+        .CopyOutArgumentBuffer_count(&mechanism_count, sizeof(mechanism_count));
     STRICT_EXPECTED_CALL(saslmechanism_get_mechanism_name(IGNORED_PTR_ARG));
     STRICT_EXPECTED_CALL(amqpvalue_get_symbol(IGNORED_PTR_ARG, IGNORED_PTR_ARG))
         .CopyOutArgumentBuffer(2, &test_mechanism, sizeof(test_mechanism));
+    STRICT_EXPECTED_CALL(amqpvalue_destroy(IGNORED_PTR_ARG));
+    STRICT_EXPECTED_CALL(sasl_init_create(IGNORED_PTR_ARG));
+    STRICT_EXPECTED_CALL(saslmechanism_get_init_bytes(IGNORED_PTR_ARG, IGNORED_PTR_ARG))
+        .CopyOutArgumentBuffer(2, &init_bytes, sizeof(init_bytes));
     saved_on_sasl_frame_received(saved_sasl_frame_codec_callback_context, test_sasl_value);
     saved_on_bytes_received(saved_on_bytes_received_context, test_sasl_outcome, sizeof(test_sasl_outcome));
     umock_c_reset_all_calls();
+    STRICT_EXPECTED_CALL(amqpvalue_get_inplace_descriptor(test_sasl_value));
     STRICT_EXPECTED_CALL(is_sasl_mechanisms_type_by_descriptor(test_descriptor_value))
         .SetReturn(false);
     STRICT_EXPECTED_CALL(is_sasl_challenge_type_by_descriptor(test_descriptor_value))
@@ -843,7 +952,6 @@ TEST_FUNCTION(saslclientio_close_async_when_the_io_state_is_OPEN_closes_the_unde
     saslclientio_get_interface_description()->concrete_io_destroy(sasl_io);
 }
 
-#if 0
 /* Tests_SRS_SASLCLIENTIO_01_015: [`saslclientio_close_async` shall close the underlying io handle passed in `saslclientio_create` by calling `xio_close`.] */
 /* Tests_SRS_SASLCLIENTIO_01_098: [`saslclientio_close_async` shall only perform the close if the state is OPEN, OPENING or ERROR.] */
 /* Tests_SRS_SASLCLIENTIO_01_016: [On success, `saslclientio_close_async` shall return 0.] */
@@ -857,7 +965,8 @@ TEST_FUNCTION(saslclientio_close_async_when_the_io_state_is_ERROR_closes_the_und
     saslclientio_config.sasl_mechanism = test_sasl_mechanism;
     sasl_io = saslclientio_get_interface_description()->concrete_io_create(&saslclientio_config);
     (void)saslclientio_get_interface_description()->concrete_io_open(sasl_io, test_on_io_open_complete, (void*)0x4242, test_on_bytes_received, (void*)0x4243, test_on_io_error, (void*)0x4244);
-    saved_io_state_changed(saved_io_callback_context, IO_STATE_ERROR, IO_STATE_NOT_OPEN);
+    setup_successful_sasl_handshake();
+    saved_on_io_error(saved_on_io_error_context);
     umock_c_reset_all_calls();
 
     STRICT_EXPECTED_CALL(xio_close(test_underlying_io, IGNORED_PTR_ARG, IGNORED_PTR_ARG));
@@ -873,6 +982,7 @@ TEST_FUNCTION(saslclientio_close_async_when_the_io_state_is_ERROR_closes_the_und
     saslclientio_get_interface_description()->concrete_io_destroy(sasl_io);
 }
 
+#if 0
 /* Tests_SRS_SASLCLIENTIO_01_097: [If `saslclientio_close_async` is called when the IO is in the `IO_STATE_NOT_OPEN` state, `saslclientio_close_async` shall fail and return a non zero value.] */
 TEST_FUNCTION(saslclientio_close_async_when_the_io_state_is_NOT_OPEN_succeeds_without_calling_the_underlying_io)
 {
